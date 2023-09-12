@@ -30,11 +30,11 @@ func getAlbums(c *gin.Context) {
 
 // postAlbums adds an album from JSON received in the request body.
 func postAlbums(c *gin.Context) {
-	var newAlbum models.Album
+	var newAlbum *models.Album
 
 	// Call BindJSON to bind the received JSON to
 	// newAlbum.
-	if err := c.BindJSON(&newAlbum); err != nil {
+	if err := c.BindJSON(newAlbum); err != nil {
 		return
 	}
 
