@@ -51,6 +51,8 @@ func main() {
 		return
 	}
 
+	defer db.Close()
+
 	if err := initRouter(); err != nil {
 		fmt.Println("failed to init router")
 		return
@@ -66,9 +68,8 @@ func postAlc(c *gin.Context) {
 		return
 	}
 
-	insertAlc := `insert into "alc"("name", "description", "price") values($1, $2, $3)`
 	_, err := db.Exec(
-		insertAlc,
+		`insert into "alc"("name", "description", "price") values($1, $2, $3)`,
 		newAlcohol.Name,
 		newAlcohol.Description,
 		newAlcohol.Price,
@@ -88,18 +89,16 @@ func postAlc(c *gin.Context) {
 
 func getAlc(c *gin.Context) {
 
-	// if len(alc) == 0 {
-	// 	c.JSON(http.StatusNotFound, gin.H{"message": "empty list"})
-	// 	return
-	// }
-
 	alcs := []m.Alcohol{}
 
-	rows, err := db.Query("SELECT * FROM alc")
+	rows, err := db.Query(`SELECT * FROM alc`)
 
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	defer rows.Close()
 
 	for rows.Next() {
 		var id int
@@ -108,34 +107,63 @@ func getAlc(c *gin.Context) {
 
 		err := rows.Scan(&id, &name, &description, &price)
 		if err != nil {
+			c.JSON(http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		alcs = append(alcs, m.Alcohol{ID: id, Name: name, Description: &description, Price: price})
 	}
 
+	if len(alcs) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "empty list"})
+		return
+	}
+
 	c.JSON(http.StatusOK, alcs)
 }
 
 func getAlcByID(c *gin.Context) {
+	// TODO: err
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	if alc, check := alc[id]; check {
-		c.JSON(http.StatusOK, alc)
+	result := m.Alcohol{}
+
+	row := db.QueryRow(`SELECT * FROM alc WHERE id=$1;`, id)
+	err := row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	c.JSON(http.StatusOK, result)
 }
 
 func deleteAlcByID(c *gin.Context) {
+	// TODO: err
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	if _, check := alc[id]; check {
-		delete(alc, id)
-		c.JSON(http.StatusOK, gin.H{"message": "successfully deleted"})
+	result, err := db.Exec("DELETE from alc WHERE id=$1 RETURNING *", id)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	rows, err := result.RowsAffected()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if rows != 1 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "successfully deleted"})
 }
