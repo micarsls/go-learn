@@ -8,17 +8,18 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	m "github.com/micarsls/go-learn/alc/models"
 )
 
-var db *sql.DB
+var db *sqlx.DB
 
 func initDB() error {
 	var err error
 
 	connStr := "postgres://admin:123456@localhost/alc?sslmode=disable"
-	db, err = sql.Open("postgres", connStr)
+	db, err = sqlx.Open("postgres", connStr)
 
 	if err != nil {
 		fmt.Println("db error: ", err)
@@ -90,27 +91,11 @@ func getAlc(c *gin.Context) {
 
 	alcs := []m.Alcohol{}
 
-	rows, err := db.Query(`SELECT * FROM alc`)
+	err := db.Select(&alcs, `SELECT * FROM alc`)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
-	}
-
-	defer rows.Close()
-
-	for rows.Next() {
-		var id int
-		var name, description string
-		var price float64
-
-		err := rows.Scan(&id, &name, &description, &price)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		alcs = append(alcs, m.Alcohol{ID: id, Name: name, Description: &description, Price: price})
 	}
 
 	if len(alcs) == 0 {
@@ -131,8 +116,7 @@ func getAlcByID(c *gin.Context) {
 
 	result := m.Alcohol{}
 
-	row := db.QueryRow(`SELECT * FROM alc WHERE id=$1;`, id)
-	err = row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
+	err = db.Get(&result, `SELECT * FROM alc WHERE id=$1;`, id)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -156,9 +140,7 @@ func deleteAlcByID(c *gin.Context) {
 
 	result := m.Alcohol{}
 
-	row := db.QueryRow(`DELETE FROM alc WHERE id=$1 RETURNING *`, id)
-
-	err = row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
+	err = db.Get(&result, `DELETE FROM alc WHERE id=$1 RETURNING *`, id)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
