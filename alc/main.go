@@ -123,13 +123,17 @@ func getAlc(c *gin.Context) {
 }
 
 func getAlcByID(c *gin.Context) {
-	// TODO: err
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 
 	result := m.Alcohol{}
 
 	row := db.QueryRow(`SELECT * FROM alc WHERE id=$1;`, id)
-	err := row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
+	err = row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -144,26 +148,45 @@ func getAlcByID(c *gin.Context) {
 }
 
 func deleteAlcByID(c *gin.Context) {
-	// TODO: err
-	id, _ := strconv.Atoi(c.Param("id"))
-
-	result, err := db.Exec("DELETE from alc WHERE id=$1 RETURNING *", id)
+	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	rows, err := result.RowsAffected()
+	result := m.Alcohol{}
+
+	row := db.QueryRow(`DELETE FROM alc WHERE id=$1 RETURNING *`, id)
+
+	err = row.Scan(&result.ID, &result.Name, &result.Description, &result.Price)
 
 	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	if rows != 1 {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
+
+	// result, err := db.Exec("DELETE from alc WHERE id=$1", id)
+
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	// 	return
+	// }
+
+	// rows, err := result.RowsAffected()
+
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	// 	return
+	// }
+	// if rows != 1 {
+	// 	c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	// 	return
+	// }
 
 	c.JSON(http.StatusOK, gin.H{"message": "successfully deleted"})
 }
