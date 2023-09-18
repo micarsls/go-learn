@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,9 +10,12 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	m "github.com/micarsls/go-learn/alc/models"
+
+	"go.uber.org/zap"
 )
 
 var db *sqlx.DB
+var logger = zap.Must(zap.NewProduction())
 
 func initDB() error {
 	var err error
@@ -22,16 +24,14 @@ func initDB() error {
 	db, err = sqlx.Open("postgres", connStr)
 
 	if err != nil {
-		fmt.Println("db error: ", err)
 		return err
 	}
 
 	if err = db.Ping(); err != nil {
-		fmt.Println("db error: ", err)
 		return err
 	}
 
-	fmt.Println("db connected")
+	logger.Info("db connected")
 	return nil
 }
 
@@ -42,28 +42,40 @@ func initRouter() error {
 	router.GET("/alcs/:id", getAlcByID)
 	router.DELETE("/alcs/:id", deleteAlcByID)
 	err := router.Run("localhost:8080")
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func main() {
+
 	if err := initDB(); err != nil {
-		fmt.Println("failed to init db")
+		logger.Error("failed to init db", zap.String("error", err.Error()))
 		return
 	}
 
 	defer db.Close()
 
 	if err := initRouter(); err != nil {
-		fmt.Println("failed to init router")
+		logger.Error("failed to init router", zap.String("error", err.Error()))
 		return
 	}
+
+	defer logger.Sync()
 }
 
 func postAlc(c *gin.Context) {
 	var newAlcohol m.Alcohol
 
 	if err := c.BindJSON(&newAlcohol); err != nil {
-		println(err.Error())
+		logger.Error(
+			"error binding alc",
+			zap.Error(err),
+			zap.String("name", newAlcohol.Name),
+			zap.String("description", *newAlcohol.Description),
+			zap.Float64("price", newAlcohol.Price),
+		)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "error binding"})
 		return
 	}
@@ -77,13 +89,32 @@ func postAlc(c *gin.Context) {
 
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key value violates unique constraint \"unique_name\"") {
+			logger.Error(
+				"already exists",
+				zap.Error(err),
+				zap.String("name", newAlcohol.Name),
+				zap.String("description", *newAlcohol.Description),
+				zap.Float64("price", newAlcohol.Price),
+			)
 			c.JSON(http.StatusConflict, gin.H{"message": "already exists"})
 			return
 		}
+		logger.Error(
+			"error creating alc",
+			zap.Error(err),
+			zap.String("name", newAlcohol.Name),
+			zap.String("description", *newAlcohol.Description),
+			zap.Float64("price", newAlcohol.Price),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-
+	logger.Info(
+		"successfully created",
+		zap.String("name", newAlcohol.Name),
+		zap.String("description", *newAlcohol.Description),
+		zap.Float64("price", newAlcohol.Price),
+	)
 	c.JSON(http.StatusCreated, gin.H{"message": "successfully created"})
 }
 
@@ -94,15 +125,26 @@ func getAlc(c *gin.Context) {
 	err := db.Select(&alcs, `SELECT * FROM alc`)
 
 	if err != nil {
+		logger.Error(
+			"error getting alc",
+			zap.Error(err),
+		)
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	if len(alcs) == 0 {
+		logger.Error(
+			"empty list",
+			zap.Error(err),
+		)
 		c.JSON(http.StatusNotFound, gin.H{"message": "empty list"})
 		return
 	}
 
+	logger.Info(
+		"successfully fetched",
+	)
 	c.JSON(http.StatusOK, alcs)
 }
 
@@ -110,6 +152,11 @@ func getAlcByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
+		logger.Error(
+			"error getting alc by id",
+			zap.Error(err),
+			zap.Int("id", id),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -120,13 +167,27 @@ func getAlcByID(c *gin.Context) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Error(
+				"not found",
+				zap.Error(err),
+				zap.Int("id", id),
+			)
 			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 			return
 		}
+		logger.Error(
+			"error getting alc by id",
+			zap.Error(err),
+			zap.Int("id", id),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
+	logger.Info(
+		"successfully fetched",
+		zap.Int("id", id),
+	)
 	c.JSON(http.StatusOK, result)
 }
 
@@ -134,6 +195,11 @@ func deleteAlcByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
+		logger.Error(
+			"error deleting alc",
+			zap.Error(err),
+			zap.Int("id", id),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -144,9 +210,19 @@ func deleteAlcByID(c *gin.Context) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Error(
+				"not found",
+				zap.Error(err),
+				zap.Int("id", id),
+			)
 			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 			return
 		}
+		logger.Error(
+			"error deleting alc",
+			zap.Error(err),
+			zap.Int("id", id),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -168,6 +244,9 @@ func deleteAlcByID(c *gin.Context) {
 	// 	c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 	// 	return
 	// }
-
+	logger.Info(
+		"successfully deleted",
+		zap.Int("id", id),
+	)
 	c.JSON(http.StatusOK, gin.H{"message": "successfully deleted"})
 }
