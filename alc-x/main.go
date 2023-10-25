@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -35,8 +36,26 @@ func initDB() error {
 	return nil
 }
 
+func something(x ...string) {
+	for i := range x {
+		println(x[i])
+	}
+}
+
 func initRouter() error {
 	router := gin.Default()
+	router.Use(func(ctx *gin.Context) {
+		startTime := time.Now()
+		ctx.Next()
+		timeDiff := time.Since(startTime)
+		logger.Info(
+			"logger",
+			zap.Duration("duration", timeDiff),
+			zap.String("method", ctx.Request.Method),
+			zap.String("path", ctx.FullPath()),
+			zap.Int("code", ctx.Writer.Status()),
+		)
+	})
 	router.POST("/alcs", postAlc)
 	router.GET("/alcs", getAlc)
 	router.GET("/alcs/:id", getAlcByID)
@@ -49,6 +68,8 @@ func initRouter() error {
 }
 
 func main() {
+
+	//something("mica", "no")
 
 	if err := initDB(); err != nil {
 		logger.Error("failed to init db", zap.String("error", err.Error()))
